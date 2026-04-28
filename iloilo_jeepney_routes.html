@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iloilo City Jeepney Routes Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f5;
+        }
+        .header {
+            background: white;
+            padding: 1.5rem 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 1rem;
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 0.5rem;
+        }
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+        .map-container {
+            background: white;
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 1rem;
+        }
+        #map { 
+            height: 600px; 
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        .controls {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 1rem;
+        }
+        .controls h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #1a1a1a;
+        }
+        .route-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 0.75rem;
+        }
+        .route-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .route-checkbox:hover {
+            background: #f8f9fa;
+            border-color: #ccc;
+        }
+        .route-checkbox input[type="checkbox"] {
+            cursor: pointer;
+        }
+        .route-color {
+            width: 20px;
+            height: 4px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+        .route-label {
+            font-size: 13px;
+            color: #333;
+            flex: 1;
+        }
+        .info-box {
+            background: #f8f9fa;
+            padding: 1rem 1.25rem;
+            border-radius: 8px;
+            border-left: 4px solid #378ADD;
+            margin-bottom: 1rem;
+        }
+        .info-box strong {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #1a1a1a;
+        }
+        .info-box p {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+        }
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: #999;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Iloilo City Jeepney Route Map</h1>
+        <p>Interactive map showing all 25 official jeepney routes • Data source: LTFRB MC No. 2023-036</p>
+    </div>
+
+    <div class="container">
+        <div class="info-box">
+            <strong>About this map</strong>
+            <p>This map displays the 25 rationalized jeepney routes serving Iloilo City. Toggle routes on/off using the checkboxes below. Click on route lines or landmarks to see more information. Routes are based on the Land Transportation Franchising and Regulatory Board Memorandum Circular No. 2023-036.</p>
+        </div>
+
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+
+        <div class="controls">
+            <h3>Toggle Routes</h3>
+            <div class="route-grid" id="route-controls"></div>
+        </div>
+    </div>
+
+    <div class="footer">
+        Data from ilonggoengineer.com • Map © OpenStreetMap contributors
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Wait for Leaflet to load
+        window.addEventListener('load', function() {
+        // Initialize map centered on Iloilo City
+        const map = L.map('map').setView([10.6969, 122.5653], 13);
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Define route colors
+        const routeColors = [
+            '#378ADD', '#1D9E75', '#D85A30', '#7F77DD', '#639922',
+            '#BA7517', '#E24B4A', '#85B7EB', '#97C459', '#EF9F27',
+            '#F09595', '#B5D4F4', '#C0DD97', '#FAC775', '#F7C1C1',
+            '#5DCAA5', '#ED93B1', '#AFA9EC', '#F0997B', '#85B7EB',
+            '#639922', '#D85A30', '#7F77DD', '#1D9E75', '#378ADD'
+        ];
+
+        // Key landmarks
+        const landmarks = [
+            { name: 'Iloilo Central Market', lat: 10.6928, lng: 122.5696 },
+            { name: 'SM City Iloilo', lat: 10.7144, lng: 122.5510 },
+            { name: 'Festive Walk', lat: 10.7154, lng: 122.5468 },
+            { name: 'Plaza Libertad', lat: 10.6926, lng: 122.5737 },
+            { name: 'Iloilo City Hall', lat: 10.6934, lng: 122.5731 },
+            { name: 'UP Visayas', lat: 10.6979, lng: 122.5554 },
+            { name: 'Mandurriao Plaza', lat: 10.7173, lng: 122.5370 },
+            { name: 'Lapuz Ferry Terminal', lat: 10.7019, lng: 122.5853 },
+            { name: 'Jaro Plaza', lat: 10.7162, lng: 122.5634 },
+            { name: 'Robinsons Place Jaro', lat: 10.7128, lng: 122.5585 },
+            { name: 'Iloilo Esplanade', lat: 10.7058, lng: 122.5472 },
+            { name: 'Molo Church', lat: 10.6955, lng: 122.5444 },
+            { name: 'La Paz Public Market', lat: 10.7087, lng: 122.5735 },
+            { name: 'Atria Park District', lat: 10.7095, lng: 122.5483 }
+        ];
+
+        // Add landmark markers
+        landmarks.forEach(landmark => {
+            L.circleMarker([landmark.lat, landmark.lng], {
+                radius: 5,
+                fillColor: '#534AB7',
+                color: '#fff',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.9
+            }).addTo(map).bindPopup(`<strong>${landmark.name}</strong>`);
+        });
+
+        // Route definitions with approximate paths
+        const routes = [
+            {
+                id: 1,
+                name: 'Route 01: Barrio Obrero–Lapuz to City Proper Loop',
+                path: [
+                    [10.7019, 122.5853], [10.6928, 122.5696], [10.6934, 122.5731],
+                    [10.6926, 122.5737], [10.6928, 122.5696], [10.7019, 122.5853]
+                ]
+            },
+            {
+                id: 2,
+                name: 'Route 02: Villa Plaza to City Proper via Calumpang',
+                path: [
+                    [10.7025, 122.5890], [10.6970, 122.5750], [10.6928, 122.5696],
+                    [10.6926, 122.5737], [10.6928, 122.5696], [10.7025, 122.5890]
+                ]
+            },
+            {
+                id: 3,
+                name: 'Route 03: Ungka to City Proper via CPU',
+                path: [
+                    [10.7200, 122.5500], [10.7162, 122.5634], [10.7087, 122.5735],
+                    [10.6979, 122.5554], [10.6928, 122.5696], [10.6926, 122.5737],
+                    [10.6900, 122.5850], [10.6926, 122.5737], [10.6979, 122.5554],
+                    [10.7087, 122.5735], [10.7162, 122.5634], [10.7200, 122.5500]
+                ]
+            },
+            {
+                id: 4,
+                name: 'Route 04: Ungka to City Proper via Aquino Avenue',
+                path: [
+                    [10.7200, 122.5500], [10.7154, 122.5468], [10.7144, 122.5510],
+                    [10.6979, 122.5554], [10.6926, 122.5737], [10.6979, 122.5554],
+                    [10.7144, 122.5510], [10.7154, 122.5468], [10.7200, 122.5500]
+                ]
+            },
+            {
+                id: 5,
+                name: 'Route 05: Festive Walk to City Proper via SM City',
+                path: [
+                    [10.7154, 122.5468], [10.7144, 122.5510], [10.6979, 122.5554],
+                    [10.6926, 122.5737], [10.6928, 122.5696], [10.6979, 122.5554],
+                    [10.7144, 122.5510], [10.7095, 122.5483], [10.7154, 122.5468]
+                ]
+            },
+            {
+                id: 6,
+                name: 'Route 06: Lanit to Infante via SM City',
+                path: [
+                    [10.7180, 122.5320], [10.7144, 122.5510], [10.6979, 122.5554],
+                    [10.6940, 122.5540], [10.6979, 122.5554], [10.7144, 122.5510],
+                    [10.7180, 122.5320]
+                ]
+            },
+            {
+                id: 7,
+                name: 'Route 07: Compania to City Proper Loop',
+                path: [
+                    [10.7050, 122.5300], [10.6979, 122.5554], [10.6926, 122.5737],
+                    [10.6928, 122.5696], [10.6979, 122.5554], [10.7050, 122.5300]
+                ]
+            },
+            {
+                id: 8,
+                name: 'Route 08: Parola to SM City via Infante Loop',
+                path: [
+                    [10.6900, 122.5850], [10.6940, 122.5540], [10.6979, 122.5554],
+                    [10.7144, 122.5510], [10.6979, 122.5554], [10.6940, 122.5540],
+                    [10.6900, 122.5850]
+                ]
+            },
+            {
+                id: 9,
+                name: 'Route 09: Mohon to City Proper',
+                path: [
+                    [10.6850, 122.5400], [10.6955, 122.5444], [10.6926, 122.5737],
+                    [10.6928, 122.5696], [10.6955, 122.5444], [10.6850, 122.5400]
+                ]
+            },
+            {
+                id: 10,
+                name: 'Route 10: Buntatala/Tagbak to City Proper',
+                path: [
+                    [10.7100, 122.5950], [10.7087, 122.5735], [10.6979, 122.5554],
+                    [10.6926, 122.5737], [10.6979, 122.5554], [10.7087, 122.5735],
+                    [10.7100, 122.5950]
+                ]
+            },
+            {
+                id: 11,
+                name: 'Route 11: Ticud La Paz to City Proper',
+                path: [
+                    [10.7150, 122.5800], [10.7087, 122.5735], [10.6979, 122.5554],
+                    [10.6926, 122.5737], [10.6979, 122.5554], [10.7087, 122.5735],
+                    [10.7150, 122.5800]
+                ]
+            },
+            {
+                id: 12,
+                name: 'Route 12: Mandurriao to City Proper via Festive Walk',
+                path: [
+                    [10.7173, 122.5370], [10.7154, 122.5468], [10.7144, 122.5510],
+                    [10.6979, 122.5554], [10.6955, 122.5444], [10.6979, 122.5554],
+                    [10.7144, 122.5510], [10.7154, 122.5468], [10.7173, 122.5370]
+                ]
+            },
+            {
+                id: 13,
+                name: 'Route 13: Hibao-an to City Proper via Tabucan',
+                path: [
+                    [10.6750, 122.5350], [10.6850, 122.5400], [10.6926, 122.5737],
+                    [10.6928, 122.5696], [10.6850, 122.5400], [10.6750, 122.5350]
+                ]
+            },
+            {
+                id: 14,
+                name: 'Route 14: Hibao-an to Jaro via Festive Walk',
+                path: [
+                    [10.6750, 122.5350], [10.7154, 122.5468], [10.7162, 122.5634],
+                    [10.7154, 122.5468], [10.6750, 122.5350]
+                ]
+            },
+            {
+                id: 15,
+                name: 'Route 15: Molo to City Proper via Baluarte Loop',
+                path: [
+                    [10.6955, 122.5444], [10.6926, 122.5737], [10.6928, 122.5696],
+                    [10.6926, 122.5737], [10.6955, 122.5444]
+                ]
+            },
+            {
+                id: 16,
+                name: 'Route 16: Bito-on to Jaro via Balabago Loop',
+                path: [
+                    [10.7300, 122.5700], [10.7162, 122.5634], [10.7128, 122.5585],
+                    [10.7162, 122.5634], [10.7300, 122.5700]
+                ]
+            },
+            {
+                id: 17,
+                name: 'Route 17: Villa Baybay to City Proper',
+                path: [
+                    [10.7050, 122.5900], [10.6979, 122.5554], [10.6926, 122.5737],
+                    [10.6979, 122.5554], [10.7050, 122.5900]
+                ]
+            },
+            {
+                id: 18,
+                name: 'Route 18: Buntatala/Tagbak to City Proper via Lapuz',
+                path: [
+                    [10.7100, 122.5950], [10.7019, 122.5853], [10.6928, 122.5696],
+                    [10.6926, 122.5737], [10.6928, 122.5696], [10.7019, 122.5853],
+                    [10.7100, 122.5950]
+                ]
+            },
+            {
+                id: 19,
+                name: 'Route 19: Bito-on to City Proper via La Paz',
+                path: [
+                    [10.7300, 122.5700], [10.7087, 122.5735], [10.6979, 122.5554],
+                    [10.6926, 122.5737], [10.6979, 122.5554], [10.7087, 122.5735],
+                    [10.7300, 122.5700]
+                ]
+            },
+            {
+                id: 20,
+                name: 'Route 20: Mohon to ISATU via Sooc/Festive Walk',
+                path: [
+                    [10.6850, 122.5400], [10.7154, 122.5468], [10.7162, 122.5634],
+                    [10.7154, 122.5468], [10.6850, 122.5400]
+                ]
+            },
+            {
+                id: 21,
+                name: 'Route 21: Buntatala/Tagbak to Festive Walk via SM City',
+                path: [
+                    [10.7100, 122.5950], [10.7144, 122.5510], [10.7095, 122.5483],
+                    [10.7154, 122.5468], [10.7095, 122.5483], [10.7144, 122.5510],
+                    [10.7100, 122.5950]
+                ]
+            },
+            {
+                id: 22,
+                name: 'Route 22: Ungka to La Paz via CPU/ISATU Loop',
+                path: [
+                    [10.7200, 122.5500], [10.7162, 122.5634], [10.7087, 122.5735],
+                    [10.7162, 122.5634], [10.7200, 122.5500]
+                ]
+            },
+            {
+                id: 23,
+                name: 'Route 23: Mohon to Mandurriao Business District',
+                path: [
+                    [10.6850, 122.5400], [10.7173, 122.5370], [10.7154, 122.5468],
+                    [10.7173, 122.5370], [10.6850, 122.5400]
+                ]
+            },
+            {
+                id: 24,
+                name: 'Route 24: La Paz to Festive Walk via Nabitasan Loop',
+                path: [
+                    [10.7087, 122.5735], [10.7154, 122.5468], [10.7087, 122.5735]
+                ]
+            },
+            {
+                id: 25,
+                name: 'Route 25: Molo to City Proper via Gen. Luna',
+                path: [
+                    [10.6955, 122.5444], [10.6979, 122.5554], [10.6926, 122.5737],
+                    [10.6979, 122.5554], [10.6955, 122.5444]
+                ]
+            }
+        ];
+
+        // Store route polylines
+        const routePolylines = {};
+
+        // Create route controls and polylines
+        const controlsContainer = document.getElementById('route-controls');
+        routes.forEach((route, index) => {
+            // Create checkbox control
+            const checkbox = document.createElement('label');
+            checkbox.className = 'route-checkbox';
+            checkbox.innerHTML = `
+                <input type="checkbox" checked data-route-id="${route.id}">
+                <span class="route-color" style="background: ${routeColors[index]};"></span>
+                <span class="route-label">${route.name}</span>
+            `;
+            controlsContainer.appendChild(checkbox);
+
+            // Create polyline
+            const polyline = L.polyline(route.path, {
+                color: routeColors[index],
+                weight: 3,
+                opacity: 0.7,
+                smoothFactor: 1
+            }).addTo(map);
+
+            polyline.bindPopup(`<strong>${route.name}</strong>`);
+            routePolylines[route.id] = polyline;
+
+            // Add toggle functionality
+            const input = checkbox.querySelector('input');
+            input.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    routePolylines[route.id].addTo(map);
+                } else {
+                    map.removeLayer(routePolylines[route.id]);
+                }
+            });
+        });
+
+        // Add toggle all functionality
+        const toggleAll = document.createElement('div');
+        toggleAll.style.marginTop = '1rem';
+        toggleAll.innerHTML = `
+            <button onclick="toggleAllRoutes(true)" style="padding: 8px 16px; margin-right: 8px; border: 1px solid #ccc; border-radius: 6px; background: white; cursor: pointer; font-size: 13px;">Show All</button>
+            <button onclick="toggleAllRoutes(false)" style="padding: 8px 16px; border: 1px solid #ccc; border-radius: 6px; background: white; cursor: pointer; font-size: 13px;">Hide All</button>
+        `;
+        document.querySelector('.controls').appendChild(toggleAll);
+
+        window.toggleAllRoutes = function(show) {
+            document.querySelectorAll('.route-checkbox input[type="checkbox"]').forEach(checkbox => {
+                checkbox.checked = show;
+                const routeId = parseInt(checkbox.dataset.routeId);
+                if (show) {
+                    routePolylines[routeId].addTo(map);
+                } else {
+                    map.removeLayer(routePolylines[routeId]);
+                }
+            });
+        };
+        }); // End of load event listener
+    </script>
+</body>
+</html>
