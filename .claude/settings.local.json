@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:ilonggoengineer.com)",
+      "WebFetch(domain:nominatim.openstreetmap.org)"
+    ]
+  }
+}

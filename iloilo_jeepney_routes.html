@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
+        body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             background: #f5f5f5;
         }
@@ -17,33 +17,39 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             margin-bottom: 1rem;
         }
-        .header h1 {
-            font-size: 24px;
-            font-weight: 600;
-            color: #1a1a1a;
-            margin-bottom: 0.5rem;
-        }
-        .header p {
-            color: #666;
-            font-size: 14px;
-        }
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 0 1rem;
-        }
+        .header h1 { font-size: 24px; font-weight: 600; color: #1a1a1a; margin-bottom: 0.5rem; }
+        .header p { color: #666; font-size: 14px; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 0 1rem; }
         .map-container {
             background: white;
             border-radius: 8px;
             padding: 1rem;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             margin-bottom: 1rem;
+            position: relative;
         }
-        #map { 
-            height: 600px; 
+        #map {
+            height: 600px;
             border-radius: 8px;
             border: 1px solid #e0e0e0;
         }
+        /* Edit mode instruction overlay on the map */
+        #edit-hint {
+            display: none;
+            position: absolute;
+            top: 1.75rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30,30,30,0.82);
+            color: #fff;
+            font-size: 12px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            pointer-events: none;
+            z-index: 1000;
+            white-space: nowrap;
+        }
+        #edit-hint b { color: #ffe082; }
         .controls {
             background: white;
             padding: 1.5rem;
@@ -51,44 +57,54 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             margin-bottom: 1rem;
         }
-        .controls h3 {
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 1rem;
-            color: #1a1a1a;
-        }
+        .controls h3 { font-size: 16px; font-weight: 600; margin-bottom: 1rem; color: #1a1a1a; }
         .route-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 0.75rem;
         }
         .route-checkbox {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 12px;
+            padding: 6px 10px;
             border: 1px solid #e0e0e0;
             border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.15s;
+            user-select: none;
         }
-        .route-checkbox:hover {
-            background: #f8f9fa;
-            border-color: #ccc;
+        .route-checkbox.editing {
+            border-color: #1976d2;
+            background: #e3f2fd;
+            box-shadow: 0 0 0 2px rgba(25,118,210,0.2);
         }
-        .route-checkbox input[type="checkbox"] {
-            cursor: pointer;
-        }
-        .route-color {
-            width: 20px;
-            height: 4px;
-            border-radius: 2px;
+        .route-checkbox input[type="checkbox"] { cursor: pointer; flex-shrink: 0; }
+        .route-color { width: 20px; height: 4px; border-radius: 2px; flex-shrink: 0; }
+        .route-label { font-size: 13px; color: #333; flex: 1; min-width: 0; }
+        .route-modified-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: #ff9800;
             flex-shrink: 0;
+            display: none;
         }
-        .route-label {
-            font-size: 13px;
-            color: #333;
-            flex: 1;
+        .edit-btn {
+            flex-shrink: 0;
+            padding: 3px 9px;
+            border: 1px solid #bbb;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #444;
+            transition: all 0.15s;
+        }
+        .edit-btn:hover { border-color: #1976d2; color: #1976d2; background: #f0f7ff; }
+        .edit-btn.active {
+            background: #1976d2;
+            color: white;
+            border-color: #1976d2;
         }
         .info-box {
             background: #f8f9fa;
@@ -97,376 +113,713 @@
             border-left: 4px solid #378ADD;
             margin-bottom: 1rem;
         }
-        .info-box strong {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: #1a1a1a;
+        .info-box strong { display: block; margin-bottom: 0.5rem; color: #1a1a1a; }
+        .info-box p { font-size: 14px; color: #666; line-height: 1.6; }
+        .info-box a { color: #378ADD; }
+        .banner {
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
         }
-        .info-box p {
-            font-size: 14px;
-            color: #666;
-            line-height: 1.6;
+        .banner.loading { background: #fff8e1; border: 1px solid #ffe082; color: #795548; }
+        .banner.success { background: #e8f5e9; border: 1px solid #a5d6a7; color: #2e7d32; }
+        .banner.error   { background: #fce4ec; border: 1px solid #f48fb1; color: #880e4f; }
+        .banner.hidden  { display: none; }
+        .banner button {
+            flex-shrink: 0;
+            padding: 4px 10px;
+            border: 1px solid currentColor;
+            border-radius: 4px;
+            background: transparent;
+            cursor: pointer;
+            font-size: 12px;
+            color: inherit;
         }
-        .footer {
-            text-align: center;
-            padding: 2rem;
-            color: #999;
+        .footer-controls {
+            margin-top: 1rem;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .footer-controls button {
+            padding: 8px 16px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
             font-size: 13px;
         }
+        .footer-controls button:hover { border-color: #999; }
+        .footer-controls button.danger { color: #c62828; border-color: #ef9a9a; }
+        .footer-controls button.danger:hover { background: #ffebee; }
+        .footer { text-align: center; padding: 2rem; color: #999; font-size: 13px; }
+
+        /* Draggable waypoint marker dot */
+        .wp-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2.5px solid white;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.55);
+            cursor: grab;
+        }
+        .wp-dot:active { cursor: grabbing; }
+
+        /* Whole-route drag handle shown in edit mode */
+        .route-move-handle {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px dashed rgba(255,255,255,0.95);
+            box-shadow: 0 1px 7px rgba(0,0,0,0.45);
+            cursor: move;
+        }
+        .route-move-handle::after {
+            content: '';
+            display: block;
+            width: 8px;
+            height: 8px;
+            margin: 6px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.95);
+        }
+
+        /* Leaflet tooltip tweak */
+        .leaflet-tooltip { font-size: 12px; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>Iloilo City Jeepney Route Map</h1>
-        <p>Interactive map showing all 25 official jeepney routes • Data source: LTFRB MC No. 2023-036</p>
+        <p>Interactive map showing all 25 official jeepney routes &bull; Data source: LTFRB MC No. 2023-036</p>
     </div>
 
     <div class="container">
+        <div id="banner" class="banner hidden"></div>
+
         <div class="info-box">
             <strong>About this map</strong>
-            <p>This map displays the 25 rationalized jeepney routes serving Iloilo City. Toggle routes on/off using the checkboxes below. Click on route lines or landmarks to see more information. Routes are based on the Land Transportation Franchising and Regulatory Board Memorandum Circular No. 2023-036.</p>
+            <p>Routes follow actual streets via OpenStreetMap routing. Street names from
+            <a href="https://ilonggoengineer.com/iloilocity-lptrp/" target="_blank">ilonggoengineer.com</a>
+            (LTFRB MC No. 2023-036). Routes are cached after first load. Click <b>✏ Edit</b> on any route to
+            drag its waypoints, drag the route handle to shift the whole path, click the line to add one, or
+            right-click a waypoint to delete it.</p>
         </div>
 
         <div class="map-container">
             <div id="map"></div>
+            <div id="edit-hint">
+                <b>Edit mode:</b> drag markers &bull; drag route handle to shift whole path &bull; click line to add waypoint &bull; right-click marker to delete
+            </div>
         </div>
 
         <div class="controls">
             <h3>Toggle Routes</h3>
             <div class="route-grid" id="route-controls"></div>
+            <div class="footer-controls" id="footer-controls"></div>
         </div>
     </div>
 
     <div class="footer">
-        Data from ilonggoengineer.com • Map © OpenStreetMap contributors
+        Street data: ilonggoengineer.com &bull; Road routing: OSRM / OpenStreetMap &bull; Map tiles &copy; OpenStreetMap contributors
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Wait for Leaflet to load
-        window.addEventListener('load', function() {
-        // Initialize map centered on Iloilo City
-        const map = L.map('map').setView([10.6969, 122.5653], 13);
+    // ─── Route definitions ────────────────────────────────────────────────────
+    // Waypoints from LTFRB MC 2023-036 street descriptions; OSRM snaps to roads.
+    const ROUTE_DEFS = [
+        {
+            id: 1, name: 'Route 01: Barrio Obrero–Lapuz to City Proper Loop',
+            // Everlasting St → Quirino Bridge → Iznart → Guanco/Central Market → Muelle Loney
+            waypoints: [[10.7020,122.5800],[10.7018,122.5703],[10.6965,122.5690],[10.6926,122.5696],[10.6971,122.5716]]
+        },
+        {
+            id: 2, name: 'Route 02: Villa Plaza to City Proper via Calumpang',
+            // Villa Arevalo (Yulo St) → Baluarte-Calumpang Blvd → Infante/Molo → Iznart → JM Basa
+            waypoints: [[10.6926,122.4998],[10.6930,122.5300],[10.6955,122.5530],[10.6965,122.5690],[10.6940,122.5720]]
+        },
+        {
+            id: 3, name: 'Route 03: Ungka to City Proper via CPU',
+            // ITGSI Terminal → Jaro Plaza → Luna St (La Paz) → Forbes Bridge → Bonifacio → City Proper
+            waypoints: [[10.7390,122.5550],[10.7244,122.5572],[10.7093,122.5676],[10.7057,122.5676],[10.7040,122.5660],[10.6940,122.5720]]
+        },
+        {
+            id: 4, name: 'Route 04: Ungka to City Proper via Aquino Avenue',
+            // ITGSI Terminal → Festive Walk → Diversion Rd → Iloilo Bridge → Infante → City Proper
+            waypoints: [[10.7390,122.5550],[10.7170,122.5462],[10.7063,122.5524],[10.7016,122.5537],[10.6960,122.5575]]
+        },
+        {
+            id: 5, name: 'Route 05: Festive Walk to City Proper via SM City',
+            // Festive Walk → SM City → Diversion Rd → Iloilo Bridge → Gen Luna → JM Basa
+            waypoints: [[10.7170,122.5462],[10.7144,122.5511],[10.7063,122.5524],[10.7016,122.5537],[10.6945,122.5618],[10.6940,122.5720]]
+        },
+        {
+            id: 6, name: 'Route 06: Lanit to Infante via SM City',
+            // Lanit/School → C-1/MacArthur → Jaro Plaza → City Center/Diversion
+            waypoints: [[10.7290,122.5300],[10.7244,122.5572],[10.7160,122.5510]]
+        },
+        {
+            id: 7, name: 'Route 07: Compania to City Proper Loop',
+            // Timawa Ave (Molo) → Compania/Avanceña → Delgado → Iznart → JM Basa
+            waypoints: [[10.6966,122.5553],[10.6957,122.5577],[10.6950,122.5640],[10.6965,122.5690],[10.6940,122.5720]]
+        },
+        {
+            id: 8, name: 'Route 08: Parola to SM City via Infante Loop',
+            // Parola Wharf → Zamora → Rizal → Quezon → De Leon → Jalandoni → Infante
+            waypoints: [[10.6905,122.5820],[10.6935,122.5770],[10.6945,122.5670],[10.6953,122.5577]]
+        },
+        {
+            id: 9, name: 'Route 09: Mohon to City Proper',
+            // Mohon → Osmeña/Jocson (Villa Arevalo) → Avanceña (Molo) → Infante → City Proper
+            waypoints: [[10.6926,122.4998],[10.6905,122.5200],[10.6967,122.5480],[10.6958,122.5555],[10.6940,122.5720]]
+        },
+        {
+            id: 10, name: 'Route 10: Buntatala/Tagbak to City Proper',
+            // Tagbak → MacArthur → Jaro Plaza → Forbes Bridge → Bonifacio → City Proper → Muelle Loney
+            waypoints: [[10.7618,122.5774],[10.7244,122.5572],[10.7093,122.5676],[10.7057,122.5676],[10.7040,122.5660],[10.6940,122.5720],[10.6971,122.5716]]
+        },
+        {
+            id: 11, name: 'Route 11: Ticud La Paz to City Proper',
+            // Baldoza Terminal (La Paz) → Forbes Bridge → Bonifacio → Iznart → JM Basa
+            waypoints: [[10.7093,122.5676],[10.7057,122.5676],[10.7040,122.5660],[10.6965,122.5690],[10.6940,122.5720]]
+        },
+        {
+            id: 12, name: 'Route 12: Mandurriao to City Proper via Festive Walk',
+            // Mandurriao Plaza → Festive Walk → Diversion Rd → Iloilo Bridge → Infante → MH Del Pilar → Molo
+            waypoints: [[10.7171,122.5369],[10.7170,122.5462],[10.7063,122.5524],[10.7016,122.5537],[10.6958,122.5555],[10.6957,122.5487],[10.6974,122.5448]]
+        },
+        {
+            id: 13, name: 'Route 13: Hibao-an to City Proper via Tabucan',
+            // Hibao-an → Guzman/R. Mapa → Carpenter's Bridge → Molo → MH Del Pilar → Gen Luna → City Proper
+            waypoints: [[10.7282,122.5266],[10.7100,122.5450],[10.7000,122.5424],[10.6974,122.5448],[10.6957,122.5487],[10.6945,122.5618],[10.6940,122.5720]]
+        },
+        {
+            id: 14, name: 'Route 14: Hibao-an to Jaro via Festive Walk',
+            // Hibao-an → Q. Abeto → Megaworld → Festive Walk → Taft → El 98 → Jaro Plaza → Jaro Market
+            waypoints: [[10.7282,122.5266],[10.7171,122.5369],[10.7170,122.5462],[10.7244,122.5572],[10.7260,122.5610]]
+        },
+        {
+            id: 15, name: 'Route 15: Molo to City Proper via Baluarte Loop',
+            // Molo Plaza → Baluarte-Calumpang Blvd → Rizal/Ledesma → Iznart → JM Basa
+            waypoints: [[10.6974,122.5448],[10.6950,122.5530],[10.6960,122.5620],[10.6965,122.5690],[10.6940,122.5720]]
+        },
+        {
+            id: 16, name: 'Route 16: Bito-on to Jaro via Balabago Loop',
+            // Metropolis East → Coastal Rd → Balabago Rd → MacArthur → Simon Ledesma → Jaro Plaza
+            waypoints: [[10.7330,122.5890],[10.7330,122.5700],[10.7250,122.5610],[10.7244,122.5572]]
+        },
+        {
+            id: 17, name: 'Route 17: Villa Baybay to City Proper',
+            // Villa Arevalo (Yulo St) → Baluarte/Sto Domingo/Bonifacio → Avanceña/Molo → Gen Luna → City Proper
+            waypoints: [[10.6926,122.4998],[10.6935,122.5200],[10.6967,122.5480],[10.6945,122.5618],[10.6940,122.5720]]
+        },
+        {
+            id: 18, name: 'Route 18: Buntatala/Tagbak to City Proper via Lapuz',
+            // Tagbak → MacArthur → C-1 → Coastal Rd → Lapuz-Mansaya-Loboc → Quirino Bridge → Muelle Loney
+            waypoints: [[10.7618,122.5774],[10.7200,122.5780],[10.7040,122.5800],[10.7018,122.5703],[10.6971,122.5716]]
+        },
+        {
+            id: 19, name: 'Route 19: Bito-on to City Proper via La Paz',
+            // Metropolis East → Coastal Rd (Jaro/La Paz) → Baldoza → Forbes Bridge → City Proper
+            waypoints: [[10.7330,122.5890],[10.7200,122.5780],[10.7093,122.5676],[10.7057,122.5676],[10.6940,122.5720]]
+        },
+        {
+            id: 20, name: 'Route 20: Mohon to ISATU via Sooc/Festive Walk',
+            // Villa Arevalo → Quezon/Jocson → Sooc → Calajunan/Q. Abeto → Festive Walk → Jaro Plaza
+            waypoints: [[10.6926,122.4998],[10.6870,122.5200],[10.7050,122.5380],[10.7170,122.5462],[10.7244,122.5572]]
+        },
+        {
+            id: 21, name: 'Route 21: Buntatala/Tagbak to Festive Walk via SM City',
+            // Tagbak → MacArthur/Simon Ledesma → Jaro → El 98/Diversion → Pison/R. Mapa → Festive Walk
+            waypoints: [[10.7618,122.5774],[10.7244,122.5572],[10.7200,122.5540],[10.7080,122.5490],[10.7170,122.5462]]
+        },
+        {
+            id: 22, name: 'Route 22: Ungka to La Paz via CPU/ISATU Loop',
+            // ITGSI Terminal → Jaro Plaza → Commission Civil/Burgos (La Paz) → La Paz Market
+            waypoints: [[10.7390,122.5550],[10.7244,122.5572],[10.7150,122.5640],[10.7093,122.5676]]
+        },
+        {
+            id: 23, name: 'Route 23: Mohon to Mandurriao Business District',
+            // Mohon → Osmeña/Jocson → Carpenter's Bridge → R. Mapa → Megaworld → Festive Walk → Pison
+            waypoints: [[10.6926,122.4998],[10.6945,122.5200],[10.7000,122.5424],[10.7100,122.5450],[10.7170,122.5462],[10.7063,122.5524]]
+        },
+        {
+            id: 24, name: 'Route 24: La Paz to Festive Walk via Nabitasan Loop',
+            // La Paz Plaza → Huervana Ext/Burgos/Magdalo → Iloilo River Blvd → Nabitasan Bridge → Diversion → Festive Walk
+            waypoints: [[10.7093,122.5676],[10.7060,122.5600],[10.7080,122.5530],[10.7063,122.5524],[10.7170,122.5462]]
+        },
+        {
+            id: 25, name: 'Route 25: Molo to City Proper via Gen. Luna',
+            // Molo Church → MH Del Pilar → Gen Luna/Infante → Iznart → JM Basa
+            waypoints: [[10.6974,122.5448],[10.6957,122.5487],[10.6945,122.5618],[10.6965,122.5690],[10.6940,122.5720]]
+        },
+    ];
 
-        // Add OpenStreetMap tiles
+    const ROUTE_COLORS = [
+        '#378ADD','#1D9E75','#D85A30','#7F77DD','#639922',
+        '#BA7517','#E24B4A','#85B7EB','#97C459','#EF9F27',
+        '#E91E63','#00BCD4','#8BC34A','#FF9800','#9C27B0',
+        '#5DCAA5','#ED93B1','#AFA9EC','#F0997B','#2196F3',
+        '#4CAF50','#FF5722','#673AB7','#009688','#FF9800'
+    ];
+
+    // ─── Storage helpers ──────────────────────────────────────────────────────
+    const WAYPOINTS_KEY = 'iloilo_user_waypoints_v1';
+    const GEOMETRY_KEY  = 'iloilo_routes_osrm_v3';
+
+    function loadUserWaypoints() {
+        try { return JSON.parse(localStorage.getItem(WAYPOINTS_KEY)) || {}; }
+        catch (_) { return {}; }
+    }
+    function saveUserWaypoints(obj) {
+        try { localStorage.setItem(WAYPOINTS_KEY, JSON.stringify(obj)); } catch (_) {}
+    }
+    function loadGeometryCache() {
+        try { return JSON.parse(localStorage.getItem(GEOMETRY_KEY)) || {}; }
+        catch (_) { return {}; }
+    }
+    function saveGeometryCache(obj) {
+        try { localStorage.setItem(GEOMETRY_KEY, JSON.stringify(obj)); } catch (_) {}
+    }
+
+    // Get effective waypoints (user-edited > defaults)
+    let userWaypoints = loadUserWaypoints();
+    function getWaypoints(routeId) {
+        const def = ROUTE_DEFS.find(r => r.id === routeId);
+        return (userWaypoints[routeId] && userWaypoints[routeId].length >= 2)
+            ? userWaypoints[routeId]
+            : def.waypoints;
+    }
+    function setWaypoints(routeId, pts) {
+        userWaypoints[routeId] = pts;
+        saveUserWaypoints(userWaypoints);
+        // Mark modified dot
+        const dot = document.querySelector(`.route-modified-dot[data-route-id="${routeId}"]`);
+        if (dot) dot.style.display = 'block';
+    }
+    function isModified(routeId) { return !!userWaypoints[routeId]; }
+
+    // ─── OSRM fetch ───────────────────────────────────────────────────────────
+    async function fetchOSRM(waypoints) {
+        const coords = waypoints.map(p => `${p[1]},${p[0]}`).join(';');
+        const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+        const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        if (!data.routes?.[0]) throw new Error('No route returned');
+        return data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    }
+
+    // ─── Banner helpers ───────────────────────────────────────────────────────
+    function showBanner(type, html) {
+        const b = document.getElementById('banner');
+        b.className = `banner ${type}`;
+        b.innerHTML = html;
+    }
+    function hideBanner() {
+        document.getElementById('banner').className = 'banner hidden';
+    }
+
+    // ─── Main initialization ──────────────────────────────────────────────────
+    let map;
+    const routePolylines = {};   // routeId → L.polyline
+    const routeLabels   = {};    // routeId → DOM label element
+
+    // Edit state (only one route editable at a time)
+    const edit = {
+        routeId: null,
+        markers: [],   // L.Marker[] in waypoint order
+        moveMarker: null,
+        moveOrigin: null,
+        moveBasePoints: null,
+    };
+
+    window.addEventListener('load', async function () {
+        map = L.map('map').setView([10.6969, 122.5653], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
             maxZoom: 19
         }).addTo(map);
 
-        // Define route colors
-        const routeColors = [
-            '#378ADD', '#1D9E75', '#D85A30', '#7F77DD', '#639922',
-            '#BA7517', '#E24B4A', '#85B7EB', '#97C459', '#EF9F27',
-            '#F09595', '#B5D4F4', '#C0DD97', '#FAC775', '#F7C1C1',
-            '#5DCAA5', '#ED93B1', '#AFA9EC', '#F0997B', '#85B7EB',
-            '#639922', '#D85A30', '#7F77DD', '#1D9E75', '#378ADD'
-        ];
-
-        // Key landmarks
-        const landmarks = [
-            { name: 'Iloilo Central Market', lat: 10.6928, lng: 122.5696 },
-            { name: 'SM City Iloilo', lat: 10.7144, lng: 122.5510 },
-            { name: 'Festive Walk', lat: 10.7154, lng: 122.5468 },
-            { name: 'Plaza Libertad', lat: 10.6926, lng: 122.5737 },
-            { name: 'Iloilo City Hall', lat: 10.6934, lng: 122.5731 },
-            { name: 'UP Visayas', lat: 10.6979, lng: 122.5554 },
-            { name: 'Mandurriao Plaza', lat: 10.7173, lng: 122.5370 },
-            { name: 'Lapuz Ferry Terminal', lat: 10.7019, lng: 122.5853 },
-            { name: 'Jaro Plaza', lat: 10.7162, lng: 122.5634 },
-            { name: 'Robinsons Place Jaro', lat: 10.7128, lng: 122.5585 },
-            { name: 'Iloilo Esplanade', lat: 10.7058, lng: 122.5472 },
-            { name: 'Molo Church', lat: 10.6955, lng: 122.5444 },
-            { name: 'La Paz Public Market', lat: 10.7087, lng: 122.5735 },
-            { name: 'Atria Park District', lat: 10.7095, lng: 122.5483 }
-        ];
-
-        // Add landmark markers
-        landmarks.forEach(landmark => {
-            L.circleMarker([landmark.lat, landmark.lng], {
-                radius: 5,
-                fillColor: '#534AB7',
-                color: '#fff',
-                weight: 2,
-                opacity: 1,
-                fillOpacity: 0.9
-            }).addTo(map).bindPopup(`<strong>${landmark.name}</strong>`);
+        // Landmarks
+        [
+            { name: 'Iloilo Central Market',  lat: 10.6926, lng: 122.5696 },
+            { name: 'SM City Iloilo',          lat: 10.7144, lng: 122.5511 },
+            { name: 'Festive Walk',            lat: 10.7170, lng: 122.5462 },
+            { name: 'Plaza Libertad',          lat: 10.6926, lng: 122.5737 },
+            { name: 'Mandurriao Plaza',        lat: 10.7171, lng: 122.5369 },
+            { name: 'Quirino Bridge',          lat: 10.7018, lng: 122.5703 },
+            { name: 'Forbes Bridge',           lat: 10.7057, lng: 122.5676 },
+            { name: 'Iloilo Bridge',           lat: 10.7016, lng: 122.5537 },
+            { name: "Carpenter's Bridge",      lat: 10.7000, lng: 122.5424 },
+            { name: 'Jaro Plaza',              lat: 10.7244, lng: 122.5572 },
+            { name: 'La Paz Public Market',    lat: 10.7093, lng: 122.5676 },
+            { name: 'Molo Church',             lat: 10.6974, lng: 122.5448 },
+            { name: 'Mohon Terminal',          lat: 10.6926, lng: 122.4998 },
+            { name: 'Tagbak Terminal',         lat: 10.7618, lng: 122.5774 },
+            { name: 'Muelle Loney',            lat: 10.6971, lng: 122.5716 },
+        ].forEach(lm => {
+            L.circleMarker([lm.lat, lm.lng], {
+                radius: 5, fillColor: '#534AB7', color: '#fff',
+                weight: 2, opacity: 1, fillOpacity: 0.9
+            }).addTo(map).bindPopup(`<strong>${lm.name}</strong>`);
         });
 
-        // Route definitions with approximate paths
-        const routes = [
-            {
-                id: 1,
-                name: 'Route 01: Barrio Obrero–Lapuz to City Proper Loop',
-                path: [
-                    [10.7019, 122.5853], [10.6928, 122.5696], [10.6934, 122.5731],
-                    [10.6926, 122.5737], [10.6928, 122.5696], [10.7019, 122.5853]
-                ]
-            },
-            {
-                id: 2,
-                name: 'Route 02: Villa Plaza to City Proper via Calumpang',
-                path: [
-                    [10.7025, 122.5890], [10.6970, 122.5750], [10.6928, 122.5696],
-                    [10.6926, 122.5737], [10.6928, 122.5696], [10.7025, 122.5890]
-                ]
-            },
-            {
-                id: 3,
-                name: 'Route 03: Ungka to City Proper via CPU',
-                path: [
-                    [10.7200, 122.5500], [10.7162, 122.5634], [10.7087, 122.5735],
-                    [10.6979, 122.5554], [10.6928, 122.5696], [10.6926, 122.5737],
-                    [10.6900, 122.5850], [10.6926, 122.5737], [10.6979, 122.5554],
-                    [10.7087, 122.5735], [10.7162, 122.5634], [10.7200, 122.5500]
-                ]
-            },
-            {
-                id: 4,
-                name: 'Route 04: Ungka to City Proper via Aquino Avenue',
-                path: [
-                    [10.7200, 122.5500], [10.7154, 122.5468], [10.7144, 122.5510],
-                    [10.6979, 122.5554], [10.6926, 122.5737], [10.6979, 122.5554],
-                    [10.7144, 122.5510], [10.7154, 122.5468], [10.7200, 122.5500]
-                ]
-            },
-            {
-                id: 5,
-                name: 'Route 05: Festive Walk to City Proper via SM City',
-                path: [
-                    [10.7154, 122.5468], [10.7144, 122.5510], [10.6979, 122.5554],
-                    [10.6926, 122.5737], [10.6928, 122.5696], [10.6979, 122.5554],
-                    [10.7144, 122.5510], [10.7095, 122.5483], [10.7154, 122.5468]
-                ]
-            },
-            {
-                id: 6,
-                name: 'Route 06: Lanit to Infante via SM City',
-                path: [
-                    [10.7180, 122.5320], [10.7144, 122.5510], [10.6979, 122.5554],
-                    [10.6940, 122.5540], [10.6979, 122.5554], [10.7144, 122.5510],
-                    [10.7180, 122.5320]
-                ]
-            },
-            {
-                id: 7,
-                name: 'Route 07: Compania to City Proper Loop',
-                path: [
-                    [10.7050, 122.5300], [10.6979, 122.5554], [10.6926, 122.5737],
-                    [10.6928, 122.5696], [10.6979, 122.5554], [10.7050, 122.5300]
-                ]
-            },
-            {
-                id: 8,
-                name: 'Route 08: Parola to SM City via Infante Loop',
-                path: [
-                    [10.6900, 122.5850], [10.6940, 122.5540], [10.6979, 122.5554],
-                    [10.7144, 122.5510], [10.6979, 122.5554], [10.6940, 122.5540],
-                    [10.6900, 122.5850]
-                ]
-            },
-            {
-                id: 9,
-                name: 'Route 09: Mohon to City Proper',
-                path: [
-                    [10.6850, 122.5400], [10.6955, 122.5444], [10.6926, 122.5737],
-                    [10.6928, 122.5696], [10.6955, 122.5444], [10.6850, 122.5400]
-                ]
-            },
-            {
-                id: 10,
-                name: 'Route 10: Buntatala/Tagbak to City Proper',
-                path: [
-                    [10.7100, 122.5950], [10.7087, 122.5735], [10.6979, 122.5554],
-                    [10.6926, 122.5737], [10.6979, 122.5554], [10.7087, 122.5735],
-                    [10.7100, 122.5950]
-                ]
-            },
-            {
-                id: 11,
-                name: 'Route 11: Ticud La Paz to City Proper',
-                path: [
-                    [10.7150, 122.5800], [10.7087, 122.5735], [10.6979, 122.5554],
-                    [10.6926, 122.5737], [10.6979, 122.5554], [10.7087, 122.5735],
-                    [10.7150, 122.5800]
-                ]
-            },
-            {
-                id: 12,
-                name: 'Route 12: Mandurriao to City Proper via Festive Walk',
-                path: [
-                    [10.7173, 122.5370], [10.7154, 122.5468], [10.7144, 122.5510],
-                    [10.6979, 122.5554], [10.6955, 122.5444], [10.6979, 122.5554],
-                    [10.7144, 122.5510], [10.7154, 122.5468], [10.7173, 122.5370]
-                ]
-            },
-            {
-                id: 13,
-                name: 'Route 13: Hibao-an to City Proper via Tabucan',
-                path: [
-                    [10.6750, 122.5350], [10.6850, 122.5400], [10.6926, 122.5737],
-                    [10.6928, 122.5696], [10.6850, 122.5400], [10.6750, 122.5350]
-                ]
-            },
-            {
-                id: 14,
-                name: 'Route 14: Hibao-an to Jaro via Festive Walk',
-                path: [
-                    [10.6750, 122.5350], [10.7154, 122.5468], [10.7162, 122.5634],
-                    [10.7154, 122.5468], [10.6750, 122.5350]
-                ]
-            },
-            {
-                id: 15,
-                name: 'Route 15: Molo to City Proper via Baluarte Loop',
-                path: [
-                    [10.6955, 122.5444], [10.6926, 122.5737], [10.6928, 122.5696],
-                    [10.6926, 122.5737], [10.6955, 122.5444]
-                ]
-            },
-            {
-                id: 16,
-                name: 'Route 16: Bito-on to Jaro via Balabago Loop',
-                path: [
-                    [10.7300, 122.5700], [10.7162, 122.5634], [10.7128, 122.5585],
-                    [10.7162, 122.5634], [10.7300, 122.5700]
-                ]
-            },
-            {
-                id: 17,
-                name: 'Route 17: Villa Baybay to City Proper',
-                path: [
-                    [10.7050, 122.5900], [10.6979, 122.5554], [10.6926, 122.5737],
-                    [10.6979, 122.5554], [10.7050, 122.5900]
-                ]
-            },
-            {
-                id: 18,
-                name: 'Route 18: Buntatala/Tagbak to City Proper via Lapuz',
-                path: [
-                    [10.7100, 122.5950], [10.7019, 122.5853], [10.6928, 122.5696],
-                    [10.6926, 122.5737], [10.6928, 122.5696], [10.7019, 122.5853],
-                    [10.7100, 122.5950]
-                ]
-            },
-            {
-                id: 19,
-                name: 'Route 19: Bito-on to City Proper via La Paz',
-                path: [
-                    [10.7300, 122.5700], [10.7087, 122.5735], [10.6979, 122.5554],
-                    [10.6926, 122.5737], [10.6979, 122.5554], [10.7087, 122.5735],
-                    [10.7300, 122.5700]
-                ]
-            },
-            {
-                id: 20,
-                name: 'Route 20: Mohon to ISATU via Sooc/Festive Walk',
-                path: [
-                    [10.6850, 122.5400], [10.7154, 122.5468], [10.7162, 122.5634],
-                    [10.7154, 122.5468], [10.6850, 122.5400]
-                ]
-            },
-            {
-                id: 21,
-                name: 'Route 21: Buntatala/Tagbak to Festive Walk via SM City',
-                path: [
-                    [10.7100, 122.5950], [10.7144, 122.5510], [10.7095, 122.5483],
-                    [10.7154, 122.5468], [10.7095, 122.5483], [10.7144, 122.5510],
-                    [10.7100, 122.5950]
-                ]
-            },
-            {
-                id: 22,
-                name: 'Route 22: Ungka to La Paz via CPU/ISATU Loop',
-                path: [
-                    [10.7200, 122.5500], [10.7162, 122.5634], [10.7087, 122.5735],
-                    [10.7162, 122.5634], [10.7200, 122.5500]
-                ]
-            },
-            {
-                id: 23,
-                name: 'Route 23: Mohon to Mandurriao Business District',
-                path: [
-                    [10.6850, 122.5400], [10.7173, 122.5370], [10.7154, 122.5468],
-                    [10.7173, 122.5370], [10.6850, 122.5400]
-                ]
-            },
-            {
-                id: 24,
-                name: 'Route 24: La Paz to Festive Walk via Nabitasan Loop',
-                path: [
-                    [10.7087, 122.5735], [10.7154, 122.5468], [10.7087, 122.5735]
-                ]
-            },
-            {
-                id: 25,
-                name: 'Route 25: Molo to City Proper via Gen. Luna',
-                path: [
-                    [10.6955, 122.5444], [10.6979, 122.5554], [10.6926, 122.5737],
-                    [10.6979, 122.5554], [10.6955, 122.5444]
-                ]
+        // ── Load geometries ──
+        const geomCache = loadGeometryCache();
+        const needFetch = ROUTE_DEFS.filter(r => !geomCache[r.id]);
+
+        if (needFetch.length > 0) {
+            showBanner('loading',
+                `<span>⏳ Fetching road-following routes (${needFetch.length} remaining)… cached after first load.</span>` +
+                `<button onclick="clearCacheAndReload()">Skip</button>`
+            );
+            let failed = 0;
+            await Promise.all(needFetch.map(async r => {
+                try {
+                    geomCache[r.id] = await fetchOSRM(getWaypoints(r.id));
+                } catch (_) {
+                    geomCache[r.id] = null;
+                    failed++;
+                }
+            }));
+            saveGeometryCache(geomCache);
+
+            if (failed > 0) {
+                showBanner('error',
+                    `<span>⚠ ${failed} route(s) fell back to straight lines (OSRM unavailable).</span>` +
+                    `<button onclick="clearCacheAndReload()">Retry</button>`
+                );
+                setTimeout(hideBanner, 6000);
+            } else {
+                showBanner('success', '<span>✓ All routes loaded and cached.</span>');
+                setTimeout(hideBanner, 2500);
             }
-        ];
+        }
 
-        // Store route polylines
-        const routePolylines = {};
+        // ── Build route controls + polylines ──
+        const grid = document.getElementById('route-controls');
+        ROUTE_DEFS.forEach((route, idx) => {
+            const color = ROUTE_COLORS[idx];
+            const geom  = geomCache[route.id] || getWaypoints(route.id);
 
-        // Create route controls and polylines
-        const controlsContainer = document.getElementById('route-controls');
-        routes.forEach((route, index) => {
-            // Create checkbox control
-            const checkbox = document.createElement('label');
-            checkbox.className = 'route-checkbox';
-            checkbox.innerHTML = `
+            // Row in controls
+            const label = document.createElement('label');
+            label.className = 'route-checkbox';
+            label.innerHTML = `
                 <input type="checkbox" checked data-route-id="${route.id}">
-                <span class="route-color" style="background: ${routeColors[index]};"></span>
+                <span class="route-color" style="background:${color};"></span>
                 <span class="route-label">${route.name}</span>
+                <span class="route-modified-dot" data-route-id="${route.id}"
+                      style="display:${isModified(route.id)?'block':'none'}"></span>
+                <button class="edit-btn" data-route-id="${route.id}" title="Edit waypoints">✏</button>
             `;
-            controlsContainer.appendChild(checkbox);
-
-            // Create polyline
-            const polyline = L.polyline(route.path, {
-                color: routeColors[index],
-                weight: 3,
-                opacity: 0.7,
-                smoothFactor: 1
-            }).addTo(map);
-
-            polyline.bindPopup(`<strong>${route.name}</strong>`);
-            routePolylines[route.id] = polyline;
-
-            // Add toggle functionality
-            const input = checkbox.querySelector('input');
-            input.addEventListener('change', (e) => {
-                if (e.target.checked) {
-                    routePolylines[route.id].addTo(map);
-                } else {
-                    map.removeLayer(routePolylines[route.id]);
-                }
+            label.querySelector('input').addEventListener('change', e => {
+                if (e.target.checked) routePolylines[route.id].addTo(map);
+                else map.removeLayer(routePolylines[route.id]);
+                // prevent label from also triggering the checkbox
             });
+            // Prevent the Edit button click from toggling the checkbox
+            label.querySelector('.edit-btn').addEventListener('click', e => {
+                e.preventDefault();
+                const id = parseInt(e.currentTarget.dataset.routeId);
+                if (edit.routeId === id) stopEditing();
+                else startEditing(id);
+            });
+            grid.appendChild(label);
+            routeLabels[route.id] = label;
+
+            // Polyline
+            const poly = L.polyline(geom, {
+                color, weight: 3, opacity: 0.75, smoothFactor: 1
+            }).addTo(map);
+            poly.bindPopup(`<strong>${route.name}</strong><br><small>LTFRB MC 2023-036 &bull; Click ✏ to edit waypoints</small>`);
+            routePolylines[route.id] = poly;
         });
 
-        // Add toggle all functionality
-        const toggleAll = document.createElement('div');
-        toggleAll.style.marginTop = '1rem';
-        toggleAll.innerHTML = `
-            <button onclick="toggleAllRoutes(true)" style="padding: 8px 16px; margin-right: 8px; border: 1px solid #ccc; border-radius: 6px; background: white; cursor: pointer; font-size: 13px;">Show All</button>
-            <button onclick="toggleAllRoutes(false)" style="padding: 8px 16px; border: 1px solid #ccc; border-radius: 6px; background: white; cursor: pointer; font-size: 13px;">Hide All</button>
+        // ── Footer buttons ──
+        const fc = document.getElementById('footer-controls');
+        fc.innerHTML = `
+            <button onclick="toggleAllRoutes(true)">Show All</button>
+            <button onclick="toggleAllRoutes(false)">Hide All</button>
+            <button onclick="clearCacheAndReload()" style="margin-left:auto;" title="Re-fetch all routes from OSRM">🔄 Refresh Routes</button>
+            <button class="danger" onclick="resetAllWaypoints()" title="Reset all user-edited waypoints to defaults">↺ Reset Edits</button>
         `;
-        document.querySelector('.controls').appendChild(toggleAll);
+    });
 
-        window.toggleAllRoutes = function(show) {
-            document.querySelectorAll('.route-checkbox input[type="checkbox"]').forEach(checkbox => {
-                checkbox.checked = show;
-                const routeId = parseInt(checkbox.dataset.routeId);
-                if (show) {
-                    routePolylines[routeId].addTo(map);
-                } else {
-                    map.removeLayer(routePolylines[routeId]);
-                }
+    // ─── Toggle all ───────────────────────────────────────────────────────────
+    window.toggleAllRoutes = function(show) {
+        document.querySelectorAll('.route-checkbox input').forEach(cb => {
+            cb.checked = show;
+            const id = parseInt(cb.dataset.routeId);
+            if (show) routePolylines[id].addTo(map);
+            else map.removeLayer(routePolylines[id]);
+        });
+    };
+
+    // ─── Cache management ─────────────────────────────────────────────────────
+    window.clearCacheAndReload = function() {
+        try { localStorage.removeItem(GEOMETRY_KEY); } catch (_) {}
+        location.reload();
+    };
+
+    window.resetAllWaypoints = function() {
+        if (!confirm('Reset all route waypoints to defaults? Your edits will be lost.')) return;
+        try { localStorage.removeItem(WAYPOINTS_KEY); localStorage.removeItem(GEOMETRY_KEY); } catch (_) {}
+        location.reload();
+    };
+
+    // ─── Edit mode ────────────────────────────────────────────────────────────
+    function startEditing(routeId) {
+        if (edit.routeId !== null) stopEditing();
+
+        edit.routeId = routeId;
+
+        // Style button + label row
+        const label = routeLabels[routeId];
+        label.classList.add('editing');
+        label.querySelector('.edit-btn').textContent = '✓ Done';
+        label.querySelector('.edit-btn').classList.add('active');
+
+        // Show hint overlay
+        document.getElementById('edit-hint').style.display = 'block';
+
+        // Change polyline cursor and enable click-to-add
+        const poly = routePolylines[routeId];
+        poly.off('click');   // remove popup trigger temporarily
+        poly.on('click', onLineClick);
+        if (poly._path) poly._path.style.cursor = 'crosshair';
+
+        // Render draggable markers and the route move handle
+        renderEditOverlays(routeId);
+
+        // Scroll label into view
+        label.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function stopEditing() {
+        const routeId = edit.routeId;
+        if (routeId === null) return;
+
+        // Remove markers
+        edit.markers.forEach(m => map.removeLayer(m));
+        edit.markers = [];
+        if (edit.moveMarker) {
+            map.removeLayer(edit.moveMarker);
+            edit.moveMarker = null;
+        }
+        edit.moveOrigin = null;
+        edit.moveBasePoints = null;
+        edit.routeId = null;
+
+        // Restore polyline
+        const poly = routePolylines[routeId];
+        poly.off('click', onLineClick);
+        const route = ROUTE_DEFS.find(r => r.id === routeId);
+        poly.bindPopup(`<strong>${route.name}</strong><br><small>LTFRB MC 2023-036 &bull; Click ✏ to edit waypoints</small>`);
+        if (poly._path) poly._path.style.cursor = '';
+
+        // Restore button
+        const label = routeLabels[routeId];
+        label.classList.remove('editing');
+        label.querySelector('.edit-btn').textContent = '✏';
+        label.querySelector('.edit-btn').classList.remove('active');
+
+        document.getElementById('edit-hint').style.display = 'none';
+    }
+
+    function rebuildMarkers(routeId) {
+        edit.markers.forEach(m => map.removeLayer(m));
+        edit.markers = [];
+
+        const waypoints = getWaypoints(routeId);
+        const color = ROUTE_COLORS[ROUTE_DEFS.findIndex(r => r.id === routeId)];
+        waypoints.forEach((wp, i) => addMarker(routeId, wp, i, color, waypoints.length));
+    }
+
+    function renderEditOverlays(routeId) {
+        rebuildMarkers(routeId);
+        renderMoveHandle(routeId);
+    }
+
+    function renderMoveHandle(routeId) {
+        if (edit.moveMarker) {
+            map.removeLayer(edit.moveMarker);
+            edit.moveMarker = null;
+        }
+        edit.moveOrigin = null;
+        edit.moveBasePoints = null;
+
+        const points = markersToLatLngs();
+        if (points.length < 2) return;
+
+        const color = ROUTE_COLORS[ROUTE_DEFS.findIndex(r => r.id === routeId)];
+        const icon = L.divIcon({
+            className: '',
+            html: `<div class="route-move-handle" style="background:${color};"></div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12],
+        });
+
+        const handle = L.marker(routeCenter(points), {
+            draggable: true,
+            icon,
+            zIndexOffset: 1200
+        }).addTo(map);
+        handle.bindTooltip('Drag to move whole route', { direction: 'top', offset: [0, -12] });
+
+        handle.on('dragstart', () => {
+            edit.moveOrigin = handle.getLatLng();
+            edit.moveBasePoints = markersToLatLngs();
+        });
+
+        handle.on('drag', () => {
+            if (!edit.moveOrigin || !edit.moveBasePoints) return;
+            const now = handle.getLatLng();
+            const dLat = now.lat - edit.moveOrigin.lat;
+            const dLng = now.lng - edit.moveOrigin.lng;
+
+            edit.markers.forEach((m, i) => {
+                const base = edit.moveBasePoints[i];
+                m.setLatLng([base[0] + dLat, base[1] + dLng]);
             });
-        };
-        }); // End of load event listener
+
+            routePolylines[routeId].setLatLngs(markersToLatLngs());
+        });
+
+        handle.on('dragend', async () => {
+            const pts = markersToLatLngs();
+            setWaypoints(routeId, pts);
+            edit.moveOrigin = null;
+            edit.moveBasePoints = null;
+            await refreshGeometry(routeId);
+        });
+
+        edit.moveMarker = handle;
+    }
+
+    function addMarker(routeId, latlng, index, color, total) {
+        const icon = L.divIcon({
+            className: '',
+            html: `<div class="wp-dot" style="background:${color};"></div>`,
+            iconSize: [14, 14],
+            iconAnchor: [7, 7],
+        });
+        const marker = L.marker(latlng, { draggable: true, icon, zIndexOffset: 1000 }).addTo(map);
+        marker.bindTooltip(
+            `<b>Waypoint ${index + 1}/${total}</b><br>Drag to move<br>Right-click to delete`,
+            { direction: 'top', offset: [0, -10] }
+        );
+
+        // Live preview while dragging
+        marker.on('drag', () => {
+            routePolylines[routeId].setLatLngs(markersToLatLngs());
+        });
+
+        // On release: save + re-fetch OSRM
+        marker.on('dragend', async () => {
+            const pts = markersToLatLngs();
+            setWaypoints(routeId, pts);
+            await refreshGeometry(routeId);
+        });
+
+        // Right-click: delete
+        marker.on('contextmenu', async e => {
+            L.DomEvent.stopPropagation(e);
+            const pts = markersToLatLngs();
+            if (pts.length <= 2) return;          // keep minimum 2
+            const idx = edit.markers.indexOf(marker);
+            pts.splice(idx, 1);
+            setWaypoints(routeId, pts);
+            rebuildMarkers(routeId);
+            await refreshGeometry(routeId);
+        });
+
+        edit.markers.push(marker);
+    }
+
+    function markersToLatLngs() {
+        return edit.markers.map(m => { const ll = m.getLatLng(); return [ll.lat, ll.lng]; });
+    }
+
+    // Click on the polyline while in edit mode → insert waypoint
+    function onLineClick(e) {
+        L.DomEvent.stopPropagation(e);
+        const routeId = edit.routeId;
+        if (routeId === null) return;
+
+        const clicked = [e.latlng.lat, e.latlng.lng];
+        const pts = markersToLatLngs();
+        const insertAt = nearestSegmentIndex(clicked, pts);
+        pts.splice(insertAt, 0, clicked);
+
+        setWaypoints(routeId, pts);
+        rebuildMarkers(routeId);
+        refreshGeometry(routeId);
+    }
+
+    // Re-fetch OSRM for one route and update its polyline
+    async function refreshGeometry(routeId) {
+        const poly = routePolylines[routeId];
+        poly.setStyle({ opacity: 0.3 });          // dim while loading
+
+        const waypoints = getWaypoints(routeId);
+        let geom;
+        try {
+            geom = await fetchOSRM(waypoints);
+        } catch (_) {
+            geom = waypoints;                      // fallback: straight lines
+        }
+
+        const cache = loadGeometryCache();
+        cache[routeId] = geom;
+        saveGeometryCache(cache);
+
+        poly.setLatLngs(geom);
+        poly.setStyle({ opacity: 0.75 });
+
+        // Refresh edit overlays so the move handle stays in sync after rerouting
+        if (edit.routeId === routeId) {
+            renderEditOverlays(routeId);
+        }
+    }
+
+    function routeCenter(points) {
+        const lats = points.map(p => p[0]);
+        const lngs = points.map(p => p[1]);
+        const minLat = Math.min(...lats);
+        const maxLat = Math.max(...lats);
+        const minLng = Math.min(...lngs);
+        const maxLng = Math.max(...lngs);
+        return [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
+    }
+
+    // Find the index at which to insert a point into a waypoints array
+    // (inserts after the segment whose perpendicular distance to p is smallest)
+    function nearestSegmentIndex(p, pts) {
+        let best = 1, bestDist = Infinity;
+        for (let i = 0; i < pts.length - 1; i++) {
+            const d = ptSegDist(p, pts[i], pts[i + 1]);
+            if (d < bestDist) { bestDist = d; best = i + 1; }
+        }
+        return best;
+    }
+
+    function ptSegDist(p, a, b) {
+        const ap = [p[0]-a[0], p[1]-a[1]];
+        const ab = [b[0]-a[0], b[1]-a[1]];
+        const len2 = ab[0]*ab[0] + ab[1]*ab[1];
+        if (len2 === 0) return Math.hypot(ap[0], ap[1]);
+        const t = Math.max(0, Math.min(1, (ap[0]*ab[0] + ap[1]*ab[1]) / len2));
+        return Math.hypot(p[0]-(a[0]+t*ab[0]), p[1]-(a[1]+t*ab[1]));
+    }
     </script>
 </body>
 </html>
